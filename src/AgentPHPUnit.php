@@ -2,7 +2,11 @@
 
 declare(strict_types=1);
 
-use PHPUnit\Framework as Framework;
+use PHPUnit\Framework\AssertionFailedError;
+use PHPUnit\Framework\Test;
+use PHPUnit\Framework\TestListener;
+use PHPUnit\Framework\TestSuite;
+use PHPUnit\Framework\Warning;
 use PHPUnit\Runner\BaseTestRunner;
 use ReportPortalBasic\Enum\ItemStatusesEnum;
 use ReportPortalBasic\Enum\ItemTypesEnum;
@@ -10,7 +14,7 @@ use ReportPortalBasic\Enum\LogLevelsEnum;
 use ReportPortalBasic\Service\ReportPortalHTTPService;
 use GuzzleHttp\Psr7\Response;
 
-class AgentPHPUnit implements Framework\TestListener
+class AgentPHPUnit implements TestListener
 {
     protected $tests = [];
 
@@ -124,12 +128,12 @@ class AgentPHPUnit implements Framework\TestListener
     }
 
     /**
-     * @param Framework\Test $test
+     * @param Test $test
      * @param Throwable $e
      * @param $logLevelsEnum
      * @param $testItemID
      */
-    private function addSetOfLogMessages(Framework\Test $test, Throwable $e, $logLevelsEnum, $testItemID)
+    private function addSetOfLogMessages(Test $test, Throwable $e, $logLevelsEnum, $testItemID)
     {
         if (empty($testItemID)) {
             return;
@@ -138,7 +142,7 @@ class AgentPHPUnit implements Framework\TestListener
         $errorMessage = method_exists($e, 'toString') ? $e->toString() : (string) $e;
         self::$httpService->addLogMessage($testItemID, $errorMessage, $logLevelsEnum);
 
-        if ($e instanceof Framework\AssertionFailedError) {
+        if ($e instanceof AssertionFailedError) {
             $this->addAssertionLogMessages($test, $e, $logLevelsEnum, $testItemID);
         }
 
@@ -147,12 +151,12 @@ class AgentPHPUnit implements Framework\TestListener
     }
 
     /**
-     * @param Framework\Test $test
-     * @param Framework\AssertionFailedError $e
+     * @param Test $test
+     * @param AssertionFailedError $e
      * @param $logLevelsEnum
      * @param $testItemID
      */
-    private function addAssertionLogMessages(Framework\Test $test, Framework\AssertionFailedError $e, $logLevelsEnum, $testItemID)
+    private function addAssertionLogMessages(Test $test, AssertionFailedError $e, $logLevelsEnum, $testItemID)
     {
         $className = get_class($test);
         $traceArray = $e->getTrace();
@@ -222,10 +226,10 @@ class AgentPHPUnit implements Framework\TestListener
     /**
      * Is a suite with name
      *
-     * @param Framework\TestSuite $suite
+     * @param TestSuite $suite
      * @return bool
      */
-    private static function hasSuiteName(Framework\TestSuite $suite): bool
+    private static function hasSuiteName(TestSuite $suite): bool
     {
         return $suite->getName() !== "";
     }
@@ -247,22 +251,22 @@ class AgentPHPUnit implements Framework\TestListener
 
     /**
      * A warning occurred.
-     * @param Framework\Test $test
-     * @param Framework\Warning $e
+     * @param Test $test
+     * @param Warning $e
      * @param float $time
      */
-    public function addWarning(\PHPUnit\Framework\Test $test, \PHPUnit\Framework\Warning $e, float $time): void
+    public function addWarning(Test $test, Warning $e, float $time): void
     {
         $this->addSetOfLogMessages($test, $e, LogLevelsEnum::WARN, $this->testItemID);
     }
 
     /**
      * Risky test.
-     * @param Framework\Test $test
+     * @param Test $test
      * @param Throwable $t
      * @param float $time
      */
-    public function addRiskyTest(\PHPUnit\Framework\Test $test, \Throwable $t, float $time): void
+    public function addRiskyTest(Test $test, \Throwable $t, float $time): void
     {
         $this->markFailed();
         $this->addSetOfLogMessages($test, $t, LogLevelsEnum::WARN, $this->testItemID);
@@ -270,11 +274,11 @@ class AgentPHPUnit implements Framework\TestListener
 
     /**
      * An error occurred.
-     * @param Framework\Test $test
+     * @param Test $test
      * @param Throwable $t
      * @param float $time
      */
-    public function addError(\PHPUnit\Framework\Test $test, \Throwable $t, float $time): void
+    public function addError(Test $test, \Throwable $t, float $time): void
     {
         $this->markFailed();
         $this->addSetOfLogMessages($test, $t, LogLevelsEnum::FATAL, $this->testItemID);
@@ -282,10 +286,10 @@ class AgentPHPUnit implements Framework\TestListener
 
     /**
      * A test ended.
-     * @param Framework\Test $test
+     * @param Test $test
      * @param float $time
      */
-    public function endTest(\PHPUnit\Framework\Test $test, float $time): void
+    public function endTest(Test $test, float $time): void
     {
         $testStatus = $this->getTestStatus($test);
         if (self::isFailedStatus($testStatus)) {
@@ -297,9 +301,9 @@ class AgentPHPUnit implements Framework\TestListener
 
     /**
      * A test started.
-     * @param Framework\Test $test
+     * @param Test $test
      */
-    public function startTest(\PHPUnit\Framework\Test $test): void
+    public function startTest(Test $test): void
     {
         $this->testName = $test->getName();
         $this->testDescription = '';
@@ -309,9 +313,9 @@ class AgentPHPUnit implements Framework\TestListener
 
     /**
      * A test suite started.
-     * @param Framework\TestSuite $suite
+     * @param TestSuite $suite
      */
-    public function startTestSuite(\PHPUnit\Framework\TestSuite $suite): void
+    public function startTestSuite(TestSuite $suite): void
     {
         if (self::hasSuiteName($suite)) {
             self::$suiteCounter++;
@@ -335,9 +339,9 @@ class AgentPHPUnit implements Framework\TestListener
 
     /**
      * A test suite ended.
-     * @param Framework\TestSuite $suite
+     * @param TestSuite $suite
      */
-    public function endTestSuite(\PHPUnit\Framework\TestSuite $suite): void
+    public function endTestSuite(TestSuite $suite): void
     {
         if (self::hasSuiteName($suite)) {
             self::$suiteCounter--;
@@ -352,11 +356,11 @@ class AgentPHPUnit implements Framework\TestListener
 
     /**
      * A failure occurred.
-     * @param Framework\Test $test
-     * @param Framework\AssertionFailedError $e
+     * @param Test $test
+     * @param AssertionFailedError $e
      * @param float $time
      */
-    public function addFailure(\PHPUnit\Framework\Test $test, \PHPUnit\Framework\AssertionFailedError $e, float $time): void
+    public function addFailure(Test $test, AssertionFailedError $e, float $time): void
     {
         $this->markFailed();
         $this->addSetOfLogMessages($test, $e, LogLevelsEnum::ERROR, $this->testItemID);
@@ -364,22 +368,22 @@ class AgentPHPUnit implements Framework\TestListener
 
     /**
      * Skipped test.
-     * @param Framework\Test $test
+     * @param Test $test
      * @param Throwable $t
      * @param float $time
      */
-    public function addSkippedTest(\PHPUnit\Framework\Test $test, \Throwable $t, float $time): void
+    public function addSkippedTest(Test $test, \Throwable $t, float $time): void
     {
         $this->addSetOfLogMessages($test, $t, LogLevelsEnum::WARN, $this->testItemID);
     }
 
     /**
      * Incomplete test.
-     * @param Framework\Test $test
+     * @param Test $test
      * @param Throwable $t
      * @param float $time
      */
-    public function addIncompleteTest(\PHPUnit\Framework\Test $test, \Throwable $t, float $time): void
+    public function addIncompleteTest(Test $test, \Throwable $t, float $time): void
     {
         $this->addSetOfLogMessages($test, $t, LogLevelsEnum::WARN, $this->testItemID);
     }

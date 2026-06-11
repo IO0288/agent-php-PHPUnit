@@ -25,7 +25,8 @@
         "guzzlehttp/psr7": "^1.9 || ^2.0",
         "php": ">=7.2",
         "phpunit/phpunit": "^7.5 || ^8.5 || ^9.6",
-        "reportportal/basic": "^1.0@dev"
+        "reportportal/basic": "^1.0@dev",
+      "ext-json": "*"
     },
     "autoload": {
         "classmap": [
