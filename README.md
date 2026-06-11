@@ -2,15 +2,14 @@
 
 PHPUnit listener that publishes test execution data to ReportPortal.
 
-This package keeps the original `agentPHPUnit` listener class for backward
-compatibility while refreshing Composer metadata, autoloading, and the example
-configuration.
+This package includes the ReportPortal HTTP client code that previously lived
+in `reportportal/basic`, so consumers only need to install this package.
 
 ## Compatibility
 
 - PHP 7.2 or newer
 - PHPUnit 7.5, 8.5, or 9.6
-- `reportportal/basic` 1.0 development branch
+- Guzzle HTTP client and Symfony YAML are installed as direct dependencies
 
 PHPUnit 10 and newer replaced the legacy listener API with the event extension
 API. Supporting those versions should be handled as a separate migration.
@@ -41,7 +40,7 @@ Register the listener in `phpunit.xml`:
 
 ```xml
 <listeners>
-    <listener class="agentPHPUnit" file="vendor/reportportal/phpunit/src/agentPHPUnit.php">
+    <listener class="AgentPHPUnit" file="vendor/reportportal/phpunit/src/AgentPHPUnit.php">
         <arguments>
             <string>reportportal-uuid</string>
             <string>https://reportportal.example.com</string>

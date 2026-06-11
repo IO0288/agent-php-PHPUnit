@@ -22,11 +22,14 @@
         "source": "https://github.com/Mikalai-Kabzar/agent-php-PHPUnit"
     },
     "require": {
+        "ext-json": "*",
+        "ext-mbstring": "*",
+        "guzzlehttp/guzzle": "^6.5 || ^7.0",
         "guzzlehttp/psr7": "^1.9 || ^2.0",
         "php": ">=7.2",
+        "psr/http-message": "^1.0 || ^2.0",
         "phpunit/phpunit": "^7.5 || ^8.5 || ^9.6",
-        "reportportal/basic": "^1.0@dev",
-      "ext-json": "*"
+        "symfony/yaml": "^4.4 || ^5.4"
     },
     "autoload": {
         "classmap": [
