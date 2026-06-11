@@ -79,6 +79,39 @@ final class AgentPHPUnitLifecycleTest extends TestCase
         );
     }
 
+    public function testErrorStatusIsReportedAsInterrupted(): void
+    {
+        $service = new RecordingReportPortalService();
+        $listener = $this->createListener($service);
+
+        $listener->startTestSuite(new TestSuite('root suite'));
+
+        $test = new AgentPHPUnitLifecycleSampleTest('testExample');
+        $listener->startTest($test);
+        $listener->addError($test, new RuntimeException('Intentional error.'), 0.01);
+        $this->setTestStatus($test, BaseTestRunner::STATUS_ERROR);
+        $listener->endTest($test, 0.01);
+
+        $this->assertSame(ItemStatusesEnum::INTERRUPTED, $service->findFinishedStatus('id-2'));
+    }
+
+    public function testInterruptedStatusMarksParentSuitesAsFailed(): void
+    {
+        $service = new RecordingReportPortalService();
+        $listener = $this->createListener($service);
+
+        $listener->startTestSuite(new TestSuite('root suite'));
+
+        $test = new AgentPHPUnitLifecycleSampleTest('testExample');
+        $listener->startTest($test);
+        $this->setTestStatus($test, BaseTestRunner::STATUS_ERROR);
+        $listener->endTest($test, 0.01);
+        $listener->endTestSuite(new TestSuite('root suite'));
+
+        $this->assertSame(ItemStatusesEnum::INTERRUPTED, $service->findFinishedStatus('id-2'));
+        $this->assertSame(ItemStatusesEnum::FAILED, $service->findFinishedStatus('id-1'));
+    }
+
     private function createListener(RecordingReportPortalService $service): AgentPHPUnit
     {
         $property = new ReflectionProperty(AgentPHPUnit::class, 'httpService');
@@ -201,6 +234,17 @@ final class RecordingReportPortalService
         }
 
         throw new RuntimeException(sprintf('Call %s with type %s was not recorded.', $method, $type));
+    }
+
+    public function findFinishedStatus(string $itemID): string
+    {
+        foreach ($this->calls as $call) {
+            if ($call['method'] === 'finishItem' && $call['itemID'] === $itemID) {
+                return $call['status'];
+            }
+        }
+
+        throw new RuntimeException(sprintf('Finish call for item %s was not recorded.', $itemID));
     }
 
     private function nextID(): string

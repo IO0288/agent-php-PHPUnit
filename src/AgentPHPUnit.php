@@ -96,7 +96,7 @@ class AgentPHPUnit implements TestListener
             return ItemStatusesEnum::STOPPED;
         }
         if ($status === BaseTestRunner::STATUS_ERROR) {
-            return ItemStatusesEnum::FAILED;
+            return ItemStatusesEnum::INTERRUPTED;
         }
         if (defined(BaseTestRunner::class . '::STATUS_RISKY')
             && $status === constant(BaseTestRunner::class . '::STATUS_RISKY')
@@ -236,7 +236,7 @@ class AgentPHPUnit implements TestListener
      */
     private static function isFailedStatus($status)
     {
-        return in_array($status, [ItemStatusesEnum::FAILED, ItemStatusesEnum::CANCELLED], true);
+        return in_array($status, [ItemStatusesEnum::FAILED, ItemStatusesEnum::INTERRUPTED, ItemStatusesEnum::CANCELLED], true);
     }
 
     private function markFailed()
