@@ -64,3 +64,28 @@ Arguments:
 
 See `ConfigFileExamples/phpUnitExampleConfigFile/phpunit.xml` for a complete
 example.
+
+## ReportPortal smoke tests
+
+This repository includes a dedicated smoke test configuration for validating
+ReportPortal uploads from the listener.
+
+Create a local config from the template and fill in the ReportPortal token:
+
+```bash
+cp phpunit.reportportal.xml.dist phpunit.reportportal.local.xml
+```
+
+Run the green connectivity suite:
+
+```bash
+vendor/bin/phpunit -c phpunit.reportportal.local.xml --testsuite reportportal-connectivity
+```
+
+Run the status matrix suite when you want to inspect failed, errored, skipped,
+incomplete, and risky tests in ReportPortal. This command is expected to exit
+with a non-zero status:
+
+```bash
+vendor/bin/phpunit -c phpunit.reportportal.local.xml --testsuite reportportal-status-matrix
+```

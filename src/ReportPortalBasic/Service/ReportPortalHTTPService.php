@@ -150,7 +150,7 @@ class ReportPortalHTTPService
             'http_errors' => false,
             'verify' => false,
             'headers' => [
-                'Authorization' => 'bearer ' . self::$UUID
+                'Authorization' => 'Bearer ' . self::$UUID
             ]
         ]);
     }
@@ -308,7 +308,7 @@ class ReportPortalHTTPService
      */
     public static function launchTestRun(string $name, string $description, string $mode, array $tags)
     {
-        $result = self::$client->post('v1/' . self::$projectName . '/launch', array(
+        $result = self::post('v1/' . self::$projectName . '/launch', array(
             'headers' => array(
                 'Content-Type' => 'application/json'
             ),
@@ -316,10 +316,10 @@ class ReportPortalHTTPService
                 'description' => $description,
                 'mode' => $mode,
                 'name' => $name,
-                'start_time' => self::getTime(),
-                'tags' => $tags
+                'startTime' => self::getTime(),
+                'attributes' => self::normalizeAttributes($tags)
             )
-        ));
+        ), array(201));
         self::$launchID = self::getValueFromResponse('id', $result);
         return $result;
     }
@@ -333,15 +333,15 @@ class ReportPortalHTTPService
      */
     public static function finishTestRun(string $runStatus)
     {
-        $result = self::$client->put('v1/' . self::$projectName . '/launch/' . self::$launchID . '/finish', array(
+        $result = self::put('v1/' . self::$projectName . '/launch/' . self::$launchID . '/finish', array(
             'headers' => array(
                 'Content-Type' => 'application/json'
             ),
             'json' => array(
-                'end_time' => self::getTime(),
-                'status' => $runStatus
+                'endTime' => self::getTime(),
+                'status' => self::normalizeStatus($runStatus)
             )
-        ));
+        ), array(200));
         return $result;
     }
 
@@ -354,15 +354,15 @@ class ReportPortalHTTPService
      */
     public static function forceFinishTestRun(string $runStatus)
     {
-        $result = self::$client->put('v1/' . self::$projectName . '/launch/' . self::$launchID . '/stop', array(
+        $result = self::put('v1/' . self::$projectName . '/launch/' . self::$launchID . '/stop', array(
             'headers' => array(
                 'Content-Type' => 'application/json'
             ),
             'json' => array(
-                'end_time' => self::getTime(),
-                'status' => $runStatus
+                'endTime' => self::getTime(),
+                'status' => self::normalizeStatus($runStatus)
             )
-        ));
+        ), array(200));
         return $result;
     }
 
@@ -379,19 +379,19 @@ class ReportPortalHTTPService
      */
     public static function createRootItem(string $name, string $description, array $tags)
     {
-        $result = self::$client->post('v1/' . self::$projectName . '/item', array(
+        $result = self::post('v1/' . self::$projectName . '/item', array(
             'headers' => array(
                 'Content-Type' => 'application/json'
             ),
             'json' => array(
                 'description' => $description,
-                'launch_id' => self::$launchID,
+                'launchUuid' => self::$launchID,
                 'name' => $name,
-                'start_time' => self::getTime(),
-                'tags' => $tags,
-                'type' => 'SUITE'
+                'startTime' => self::getTime(),
+                'attributes' => self::normalizeAttributes($tags),
+                'type' => self::normalizeItemType('SUITE')
             )
-        ));
+        ), array(201));
         self::$rootItemID = self::getValueFromResponse('id', $result);
         return $result;
     }
@@ -421,17 +421,18 @@ class ReportPortalHTTPService
      */
     public static function addLogMessage(string $item_id, string $message, string $logLevel)
     {
-        $result = self::$client->post('v1/' . self::$projectName . '/log', array(
+        $result = self::post('v1/' . self::$projectName . '/log', array(
             'headers' => array(
                 'Content-Type' => 'application/json'
             ),
             'json' => array(
-                'item_id' => $item_id,
+                'launchUuid' => self::$launchID,
+                'itemUuid' => $item_id,
                 'message' => $message,
                 'time' => self::getTime(),
                 'level' => $logLevel
             )
-        ));
+        ), array(201));
         return $result;
     }
 
@@ -453,7 +454,8 @@ class ReportPortalHTTPService
                 [
                     'name' => 'json_request_part',
                     'contents' => json_encode([['file' => ['name' => 'picture'],
-                        'item_id' => $item_id,
+                        'launchUuid' => self::$launchID,
+                        'itemUuid' => $item_id,
                         'message' => $message,
                         'time' => self::getTime(),
                         'level' => $logLevel]]),
@@ -463,7 +465,7 @@ class ReportPortalHTTPService
                     ]
                 ],
                 [
-                    'name' => 'binary_part',
+                    'name' => 'file',
                     'contents' => $pictureAsString,
                     'filename' => 'picture',
                     'headers' => [
@@ -479,6 +481,7 @@ class ReportPortalHTTPService
                 $multipart
             );
             $result = self::$client->send($request);
+            self::assertSuccessfulResponse($result, 'POST v1/' . self::$projectName . '/log', array(201));
             return $result;
         }
     }
@@ -496,16 +499,17 @@ class ReportPortalHTTPService
      */
     public static function finishItem(string $itemID, string $status, string $description)
     {
-        $result = self::$client->put('v1/' . self::$projectName . '/item/' . $itemID, array(
+        $result = self::put('v1/' . self::$projectName . '/item/' . $itemID, array(
             'headers' => array(
                 'Content-Type' => 'application/json'
             ),
             'json' => array(
                 'description' => $description,
-                'end_time' => self::getTime(),
-                'status' => $status
+                'endTime' => self::getTime(),
+                'launchUuid' => self::$launchID,
+                'status' => self::normalizeStatus($status)
             )
-        ));
+        ), array(200));
         return $result;
     }
 
@@ -519,8 +523,21 @@ class ReportPortalHTTPService
      */
     public static function getValueFromResponse(string $lookForRequest, ResponseInterface $response)
     {
-        $array = json_decode($response->getBody()->getContents());
-        return $array->{$lookForRequest};
+        $array = json_decode((string) $response->getBody());
+
+        if (isset($array->{$lookForRequest})) {
+            return $array->{$lookForRequest};
+        }
+
+        if (!self::$isHTTPErrorsAllowed) {
+            throw new \RuntimeException(sprintf(
+                'ReportPortal response does not contain "%s". Response body: %s',
+                $lookForRequest,
+                self::getResponseBodyForMessage($response)
+            ));
+        }
+
+        return '';
     }
 
     /**
@@ -535,24 +552,26 @@ class ReportPortalHTTPService
      * @param string $type
      *            - item type
      * @param array $tags
-     *            - array with tags
+     *            - array with tags or attributes
+     * @param array $metadata
+     *            - extra ReportPortal test item fields
      * @return ResponseInterface - result of request
      */
-    public static function startChildItem(string $parentItemID, string $description, string $name, string $type, array $tags)
+    public static function startChildItem(string $parentItemID, string $description, string $name, string $type, array $tags, array $metadata = [])
     {
-        $result = self::$client->post('v1/' . self::$projectName . '/item/' . $parentItemID, array(
+        $result = self::post('v1/' . self::$projectName . '/item/' . $parentItemID, array(
             'headers' => array(
                 'Content-Type' => 'application/json'
             ),
-            'json' => array(
+            'json' => array_merge(array(
                 'description' => $description,
-                'launch_id' => self::$launchID,
+                'launchUuid' => self::$launchID,
                 'name' => $name,
-                'start_time' => self::getTime(),
-                'tags' => $tags,
-                'type' => $type
-            )
-        ));
+                'startTime' => self::getTime(),
+                'attributes' => self::normalizeAttributes($tags),
+                'type' => self::normalizeItemType($type)
+            ), self::filterEmptyMetadata($metadata))
+        ), array(201));
         return $result;
     }
 
@@ -567,6 +586,125 @@ class ReportPortalHTTPService
     }
 
     /**
+     * @param array $tags
+     * @return array
+     */
+    private static function normalizeAttributes(array $tags)
+    {
+        $attributes = [];
+        foreach ($tags as $key => $value) {
+            if (is_array($value)) {
+                $attributes[] = $value;
+                continue;
+            }
+
+            if (is_string($key)) {
+                $attributes[] = [
+                    'key' => $key,
+                    'value' => (string) $value,
+                ];
+                continue;
+            }
+
+            $attributes[] = [
+                'value' => (string) $value,
+            ];
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * @param string $status
+     * @return string
+     */
+    private static function normalizeStatus(string $status)
+    {
+        return strtolower($status);
+    }
+
+    /**
+     * @param string $type
+     * @return string
+     */
+    private static function normalizeItemType(string $type)
+    {
+        return strtolower($type);
+    }
+
+    /**
+     * @param array $metadata
+     * @return array
+     */
+    private static function filterEmptyMetadata(array $metadata)
+    {
+        return array_filter($metadata, function ($value) {
+            return $value !== null && $value !== '' && $value !== [];
+        });
+    }
+
+    /**
+     * @param string $uri
+     * @param array $options
+     * @param array $expectedStatusCodes
+     * @return ResponseInterface
+     */
+    private static function post(string $uri, array $options, array $expectedStatusCodes)
+    {
+        $response = self::$client->post($uri, $options);
+        self::assertSuccessfulResponse($response, 'POST ' . $uri, $expectedStatusCodes);
+
+        return $response;
+    }
+
+    /**
+     * @param string $uri
+     * @param array $options
+     * @param array $expectedStatusCodes
+     * @return ResponseInterface
+     */
+    private static function put(string $uri, array $options, array $expectedStatusCodes)
+    {
+        $response = self::$client->put($uri, $options);
+        self::assertSuccessfulResponse($response, 'PUT ' . $uri, $expectedStatusCodes);
+
+        return $response;
+    }
+
+    /**
+     * @param ResponseInterface $response
+     * @param string $requestDescription
+     * @param array $expectedStatusCodes
+     */
+    private static function assertSuccessfulResponse(ResponseInterface $response, string $requestDescription, array $expectedStatusCodes)
+    {
+        if (self::$isHTTPErrorsAllowed || in_array($response->getStatusCode(), $expectedStatusCodes, true)) {
+            return;
+        }
+
+        throw new \RuntimeException(sprintf(
+            'ReportPortal request failed: %s returned HTTP %d. Response body: %s',
+            $requestDescription,
+            $response->getStatusCode(),
+            self::getResponseBodyForMessage($response)
+        ));
+    }
+
+    /**
+     * @param ResponseInterface $response
+     * @return string
+     */
+    private static function getResponseBodyForMessage(ResponseInterface $response)
+    {
+        $body = (string) $response->getBody();
+        if (strlen($body) > 1000) {
+            return substr($body, 0, 1000) . '...';
+        }
+
+        return $body;
+    }
+
+    /**
      * Force finish items
      *
      * @param $result
@@ -577,9 +715,9 @@ class ReportPortalHTTPService
     public static function finishAll($result)
     {
         $status = true;
-        $body = $result->getBody();
-        $array = json_decode($body->getContents());
-        if ((strpos($body, self::ERROR_FINISH_LAUNCH) > -1) or (strpos($body, self::ERROR_FINISH_TEST_ITEM) > -1)) {
+        $body = (string) $result->getBody();
+        $array = json_decode($body);
+        if (strpos($body, self::ERROR_FINISH_LAUNCH) !== false || strpos($body, self::ERROR_FINISH_TEST_ITEM) !== false) {
             $message = $array->{'message'};
             $items = mb_split(',', explode(']', explode('[', $message)[1])[0]);
             foreach ($items as $itemID) {

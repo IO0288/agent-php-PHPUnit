@@ -6,3 +6,5 @@ build/
 .settings/org.eclipse.wst.validation.prefs
 .idea/
 .codegraph/
+phpunit.reportportal.local.xml
+.phpunit.result.cache

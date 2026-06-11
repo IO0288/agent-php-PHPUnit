@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit bootstrap="./vendor/autoload.php"
+         colors="true"
+         beStrictAboutTestsThatDoNotTestAnything="true"
+         stopOnFailure="false"
+         stopOnError="false"
+         stopOnSkipped="false"
+         stopOnIncomplete="false"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.6/phpunit.xsd">
+    <testsuites>
+        <testsuite name="reportportal-connectivity">
+            <file>./tests/ReportPortalSmoke/ReportPortalConnectivityTest.php</file>
+        </testsuite>
+        <testsuite name="reportportal-status-matrix">
+            <file>./tests/ReportPortalSmoke/ReportPortalStatusMatrixTest.php</file>
+        </testsuite>
+    </testsuites>
+
+    <listeners>
+        <listener class="AgentPHPUnit" file="./src/AgentPHPUnit.php">
+            <arguments>
+                <string>reportportal-token</string>
+                <string>http://192.168.46.228:8080</string>
+                <string>agent-php-PHPUnit</string>
+                <string>.000+00:00</string>
+                <string>test launch name</string>
+                <string>test launch description</string>
+            </arguments>
+        </listener>
+    </listeners>
+</phpunit>

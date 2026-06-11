@@ -307,8 +307,50 @@ class AgentPHPUnit implements TestListener
     {
         $this->testName = $test->getName();
         $this->testDescription = '';
-        $response = self::$httpService->startChildItem($this->classItemID, $this->testDescription, $this->testName, ItemTypesEnum::TEST, []);
+        $response = self::$httpService->startChildItem(
+            $this->classItemID,
+            $this->testDescription,
+            $this->testName,
+            ItemTypesEnum::TEST,
+            [],
+            $this->buildTestItemMetadata($test)
+        );
         $this->testItemID = self::getID($response);
+    }
+
+    /**
+     * @param Test $test
+     * @return array
+     */
+    private function buildTestItemMetadata(Test $test)
+    {
+        $className = get_class($test);
+        $testName = $this->getTestName($test, true);
+        $methodName = $this->getTestName($test, false);
+
+        return [
+            'codeRef' => $className . '::' . $methodName,
+            'uniqueId' => $className . '::' . $testName,
+        ];
+    }
+
+    /**
+     * @param Test $test
+     * @param bool $withDataSet
+     * @return string
+     */
+    private function getTestName(Test $test, bool $withDataSet)
+    {
+        if (!method_exists($test, 'getName')) {
+            return get_class($test);
+        }
+
+        $method = new ReflectionMethod($test, 'getName');
+        if ($method->getNumberOfParameters() > 0) {
+            return $test->getName($withDataSet);
+        }
+
+        return $test->getName();
     }
 
     /**
