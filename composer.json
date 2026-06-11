@@ -1,23 +1,44 @@
 {
-  	"name": "reportportal/phpunit",
-	"type" : "library",
-	"description" : "Basic classes for Report Portal collaboration with PHPUnit",
-	"keywords" : [
-		"Report",
-		"Reporting",
-		"PHPUnit",
-		"Report Portal"
-	],
-	"homepage" : "https://github.com/Mikalai-Kabzar/client-php",
-	"license" : "MIT",
-	"authors" : [{
-			"name" : "Kabzar Mikalai",
-			"email" : "loki.engine@mail.ru",
-			"role" : "Developer"
-		}
-	],
-  	"require": {
-    	"phpunit/phpunit": "7.*",
-	"reportportal/basic" : "1.0.x-dev"
-  }
+    "name": "reportportal/phpunit",
+    "type": "library",
+    "description": "ReportPortal listener for PHPUnit test runs",
+    "keywords": [
+        "phpunit",
+        "reportportal",
+        "reporting",
+        "testing"
+    ],
+    "homepage": "https://github.com/Mikalai-Kabzar/agent-php-PHPUnit",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Kabzar Mikalai",
+            "email": "loki.engine@mail.ru",
+            "role": "Developer"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/Mikalai-Kabzar/agent-php-PHPUnit/issues",
+        "source": "https://github.com/Mikalai-Kabzar/agent-php-PHPUnit"
+    },
+    "require": {
+        "guzzlehttp/psr7": "^1.9 || ^2.0",
+        "php": ">=7.2",
+        "phpunit/phpunit": "^7.5 || ^8.5 || ^9.6",
+        "reportportal/basic": "^1.0@dev"
+    },
+    "autoload": {
+        "classmap": [
+            "src/"
+        ]
+    },
+    "prefer-stable": true,
+    "config": {
+        "sort-packages": true
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-master": "1.0.x-dev"
+        }
+    }
 }

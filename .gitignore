@@ -4,3 +4,4 @@ build/
 .buildpath
 
 .settings/org.eclipse.wst.validation.prefs
+.idea/

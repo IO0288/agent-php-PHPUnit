@@ -1,20 +1,18 @@
 <?php
-/**
- * Created by PhpStorm.
- * User: Mikalai_Kabzar
- * Date: 1/9/2018
- * Time: 1:47 PM
- */
-use PHPUnit\Framework as Framework;
-use ReportPortalBasic\Enum\ItemStatusesEnum as ItemStatusesEnum;
-use ReportPortalBasic\Enum\ItemTypesEnum as ItemTypesEnum;
-use ReportPortalBasic\Enum\LogLevelsEnum as LogLevelsEnum;
-use ReportPortalBasic\Service\ReportPortalHTTPService;
-use GuzzleHttp\Psr7\Response as Response;
 
-class agentPHPUnit implements Framework\TestListener
+declare(strict_types=1);
+
+use PHPUnit\Framework as Framework;
+use PHPUnit\Runner\BaseTestRunner;
+use ReportPortalBasic\Enum\ItemStatusesEnum;
+use ReportPortalBasic\Enum\ItemTypesEnum;
+use ReportPortalBasic\Enum\LogLevelsEnum;
+use ReportPortalBasic\Service\ReportPortalHTTPService;
+use GuzzleHttp\Psr7\Response;
+
+class AgentPHPUnit implements Framework\TestListener
 {
-    protected $tests = array();
+    protected $tests = [];
 
     private $UUID;
     private $projectName;
@@ -32,6 +30,9 @@ class agentPHPUnit implements Framework\TestListener
     private $testItemID;
 
     private static $suiteCounter = 0;
+    private $isLaunchFailed = false;
+    private $isCurrentClassFailed = false;
+    private $isFinished = false;
 
     /**
      * @var ReportPortalHTTPService
@@ -65,33 +66,50 @@ class agentPHPUnit implements Framework\TestListener
      */
     public function __destruct()
     {
-        $status = self::getStatusByBool(true);
+        if ($this->isFinished || !self::$httpService instanceof ReportPortalHTTPService) {
+            return;
+        }
+
+        $this->isFinished = true;
+        $status = self::getStatusByBool($this->isLaunchFailed);
         $HTTPResult = self::$httpService->finishTestRun($status);
         self::$httpService->finishAll($HTTPResult);
     }
 
     /**
      * @param $test
-     * @return null|string
+     * @return string
      */
     private function getTestStatus($test)
     {
         $status = $test->getStatus();
-        $statusResult = null;
-        if ($status === PHPUnit\Runner\BaseTestRunner::STATUS_PASSED) {
-            $statusResult = ItemStatusesEnum::PASSED;
-        } else if ($status === PHPUnit\Runner\BaseTestRunner::STATUS_FAILURE) {
-            $statusResult = ItemStatusesEnum::FAILED;
-        } else if ($status === PHPUnit\Runner\BaseTestRunner::STATUS_SKIPPED) {
-            $statusResult = ItemStatusesEnum::SKIPPED;
-        } else if ($status === PHPUnit\Runner\BaseTestRunner::STATUS_INCOMPLETE) {
-            $statusResult = ItemStatusesEnum::STOPPED;
-        } else if ($status === PHPUnit\Runner\BaseTestRunner::STATUS_ERROR) {
-            $statusResult = ItemStatusesEnum::CANCELLED;
-        } else {
-            $statusResult = ItemStatusesEnum::SKIPPED;
+        if ($status === BaseTestRunner::STATUS_PASSED) {
+            return ItemStatusesEnum::PASSED;
         }
-        return $statusResult;
+        if ($status === BaseTestRunner::STATUS_FAILURE) {
+            return ItemStatusesEnum::FAILED;
+        }
+        if ($status === BaseTestRunner::STATUS_SKIPPED) {
+            return ItemStatusesEnum::SKIPPED;
+        }
+        if ($status === BaseTestRunner::STATUS_INCOMPLETE) {
+            return ItemStatusesEnum::STOPPED;
+        }
+        if ($status === BaseTestRunner::STATUS_ERROR) {
+            return ItemStatusesEnum::CANCELLED;
+        }
+        if (defined(BaseTestRunner::class . '::STATUS_RISKY')
+            && $status === constant(BaseTestRunner::class . '::STATUS_RISKY')
+        ) {
+            return ItemStatusesEnum::FAILED;
+        }
+        if (defined(BaseTestRunner::class . '::STATUS_WARNING')
+            && $status === constant(BaseTestRunner::class . '::STATUS_WARNING')
+        ) {
+            return ItemStatusesEnum::FAILED;
+        }
+
+        return ItemStatusesEnum::SKIPPED;
     }
 
     /**
@@ -107,16 +125,22 @@ class agentPHPUnit implements Framework\TestListener
 
     /**
      * @param Framework\Test $test
-     * @param Framework\Exception $e
+     * @param Throwable $e
      * @param $logLevelsEnum
      * @param $testItemID
      */
-    private function addSetOfLogMessages(PHPUnit\Framework\Test $test, PHPUnit\Framework\Exception $e, $logLevelsEnum, $testItemID)
+    private function addSetOfLogMessages(Framework\Test $test, Throwable $e, $logLevelsEnum, $testItemID)
     {
-        $errorMessage = $e->toString();
+        if (empty($testItemID)) {
+            return;
+        }
+
+        $errorMessage = method_exists($e, 'toString') ? $e->toString() : (string) $e;
         self::$httpService->addLogMessage($testItemID, $errorMessage, $logLevelsEnum);
 
-        $this->AddLogMessages($test, $e, $logLevelsEnum, $testItemID);
+        if ($e instanceof Framework\AssertionFailedError) {
+            $this->addAssertionLogMessages($test, $e, $logLevelsEnum, $testItemID);
+        }
 
         $trace = $e->getTraceAsString();
         self::$httpService->addLogMessage($testItemID, $trace, $logLevelsEnum);
@@ -128,27 +152,44 @@ class agentPHPUnit implements Framework\TestListener
      * @param $logLevelsEnum
      * @param $testItemID
      */
-    private function AddLogMessages(PHPUnit\Framework\Test $test, PHPUnit\Framework\AssertionFailedError $e, $logLevelsEnum, $testItemID)
+    private function addAssertionLogMessages(Framework\Test $test, Framework\AssertionFailedError $e, $logLevelsEnum, $testItemID)
     {
         $className = get_class($test);
         $traceArray = $e->getTrace();
-        $arraySize = sizeof($traceArray);
+        $arraySize = count($traceArray);
         $foundedFirstMatch = false;
         $counter = 0;
-        while (!$foundedFirstMatch and $counter < $arraySize) {
-            if (strpos($traceArray[$counter]["file"], $className) != false) {
+        while (!$foundedFirstMatch && $counter < $arraySize) {
+            if (isset($traceArray[$counter]["file"]) && strpos($traceArray[$counter]["file"], $className) !== false) {
                 $fileName = $traceArray[$counter]["file"];
-                $fileLine = $traceArray[$counter]["line"];
-                $function = $traceArray[$counter]["function"];
-                $assertClass = $traceArray[$counter]["class"];
-                $type = $traceArray[$counter]["type"];
-                $args = implode(',', $traceArray[$counter]["args"]);
+                $fileLine = $traceArray[$counter]["line"] ?? '';
+                $function = $traceArray[$counter]["function"] ?? '';
+                $assertClass = $traceArray[$counter]["class"] ?? '';
+                $type = $traceArray[$counter]["type"] ?? '';
+                $args = implode(',', array_map([$this, 'formatTraceArgument'], $traceArray[$counter]["args"] ?? []));
                 self::$httpService->addLogMessage($testItemID, $assertClass . $type . $function . '(' . $args . ')', $logLevelsEnum);
                 self::$httpService->addLogMessage($testItemID, $fileName . ':' . $fileLine, $logLevelsEnum);
                 $foundedFirstMatch = true;
             }
             $counter++;
         }
+    }
+
+    /**
+     * @param mixed $argument
+     * @return string
+     */
+    private function formatTraceArgument($argument)
+    {
+        if (is_scalar($argument) || $argument === null) {
+            return (string) $argument;
+        }
+
+        if (is_object($argument)) {
+            return get_class($argument);
+        }
+
+        return gettype($argument);
     }
 
     /**
@@ -173,18 +214,35 @@ class agentPHPUnit implements Framework\TestListener
      */
     private static function getID(Response $HTTPResponse)
     {
-        return json_decode($HTTPResponse->getBody(), true)['id'];
+        $payload = json_decode((string) $HTTPResponse->getBody(), true);
+
+        return isset($payload['id']) ? (string) $payload['id'] : '';
     }
 
     /**
-     * Is a suite without name
+     * Is a suite with name
      *
      * @param Framework\TestSuite $suite
      * @return bool
      */
-    private static function isNoNameSuite(\PHPUnit\Framework\TestSuite $suite):bool
+    private static function hasSuiteName(Framework\TestSuite $suite): bool
     {
         return $suite->getName() !== "";
+    }
+
+    /**
+     * @param string $status
+     * @return bool
+     */
+    private static function isFailedStatus($status)
+    {
+        return in_array($status, [ItemStatusesEnum::FAILED, ItemStatusesEnum::CANCELLED], true);
+    }
+
+    private function markFailed()
+    {
+        $this->isCurrentClassFailed = true;
+        $this->isLaunchFailed = true;
     }
 
     /**
@@ -195,7 +253,7 @@ class agentPHPUnit implements Framework\TestListener
      */
     public function addWarning(\PHPUnit\Framework\Test $test, \PHPUnit\Framework\Warning $e, float $time): void
     {
-        // TODO: Implement addWarning() method.
+        $this->addSetOfLogMessages($test, $e, LogLevelsEnum::WARN, $this->testItemID);
     }
 
     /**
@@ -206,7 +264,8 @@ class agentPHPUnit implements Framework\TestListener
      */
     public function addRiskyTest(\PHPUnit\Framework\Test $test, \Throwable $t, float $time): void
     {
-        // TODO: Implement addRiskyTest() method.
+        $this->markFailed();
+        $this->addSetOfLogMessages($test, $t, LogLevelsEnum::WARN, $this->testItemID);
     }
 
     /**
@@ -217,6 +276,7 @@ class agentPHPUnit implements Framework\TestListener
      */
     public function addError(\PHPUnit\Framework\Test $test, \Throwable $t, float $time): void
     {
+        $this->markFailed();
         $this->addSetOfLogMessages($test, $t, LogLevelsEnum::FATAL, $this->testItemID);
     }
 
@@ -228,6 +288,10 @@ class agentPHPUnit implements Framework\TestListener
     public function endTest(\PHPUnit\Framework\Test $test, float $time): void
     {
         $testStatus = $this->getTestStatus($test);
+        if (self::isFailedStatus($testStatus)) {
+            $this->markFailed();
+        }
+
         self::$httpService->finishItem($this->testItemID, $testStatus, $time . ' seconds');
     }
 
@@ -249,20 +313,21 @@ class agentPHPUnit implements Framework\TestListener
      */
     public function startTestSuite(\PHPUnit\Framework\TestSuite $suite): void
     {
-        if (self::isNoNameSuite($suite)) {
+        if (self::hasSuiteName($suite)) {
             self::$suiteCounter++;
 
             if (self::$suiteCounter == 1) {
                 $suiteName = $suite->getName();
                 $response = self::$httpService->createRootItem($suiteName, '', []);
                 $this->rootItemID = self::getID($response);
-            } elseif (self::$suiteCounter >1) {
+            } elseif (self::$suiteCounter > 1) {
                 $className = $suite->getName();
                 $this->className = $className;
                 $this->classDescription = '';
-                if (self::$suiteCounter == 2){
+                if (self::$suiteCounter == 2) {
                     $response = self::$httpService->startChildItem($this->rootItemID, $this->classDescription, $this->className, ItemTypesEnum::SUITE, []);
                     $this->classItemID = self::getID($response);
+                    $this->isCurrentClassFailed = false;
                 }
             }
         }
@@ -274,12 +339,13 @@ class agentPHPUnit implements Framework\TestListener
      */
     public function endTestSuite(\PHPUnit\Framework\TestSuite $suite): void
     {
-        if (self::isNoNameSuite($suite)) {
+        if (self::hasSuiteName($suite)) {
             self::$suiteCounter--;
             if (self::$suiteCounter == 0) {
                 self::$httpService->finishRootItem();
-            } elseif (self::$suiteCounter == 1) {
-                self::$httpService->finishItem($this->classItemID, ItemStatusesEnum::FAILED, $this->classDescription);
+            } elseif (self::$suiteCounter == 1 && !empty($this->classItemID)) {
+                $status = self::getStatusByBool($this->isCurrentClassFailed);
+                self::$httpService->finishItem($this->classItemID, $status, $this->classDescription);
             }
         }
     }
@@ -292,6 +358,7 @@ class agentPHPUnit implements Framework\TestListener
      */
     public function addFailure(\PHPUnit\Framework\Test $test, \PHPUnit\Framework\AssertionFailedError $e, float $time): void
     {
+        $this->markFailed();
         $this->addSetOfLogMessages($test, $e, LogLevelsEnum::ERROR, $this->testItemID);
     }
 

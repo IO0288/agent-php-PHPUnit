@@ -1,52 +1,67 @@
 # ReportPortal agent for PHPUnit
 
-PHPUnit agent for EPAM Report Portal
+PHPUnit listener that publishes test execution data to ReportPortal.
 
-## How to use.
+This package keeps the original `agentPHPUnit` listener class for backward
+compatibility while refreshing Composer metadata, autoloading, and the example
+configuration.
 
-Use as an example: https://github.com/Mikalai-Kabzar/phpUnit-test-framework
+## Compatibility
 
-### Steps:
+- PHP 7.2 or newer
+- PHPUnit 7.5, 8.5, or 9.6
+- `reportportal/basic` 1.0 development branch
 
-#### 1) Add dependency to your composer.json file.
+PHPUnit 10 and newer replaced the legacy listener API with the event extension
+API. Supporting those versions should be handled as a separate migration.
+
+## Installation
+
+Add the package to the project that runs PHPUnit:
+
+```json
+{
+    "require-dev": {
+        "reportportal/phpunit": "dev-master"
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
 ```
-  "minimum-stability": "dev",
-  "require-dev": {
-    "reportportal/phpunit" : "*"
-  },
+
+Then install dependencies:
+
+```bash
+composer update
 ```
-Use as an example: https://github.com/Mikalai-Kabzar/phpUnit-test-framework/blob/master/composer.json
 
-  
-#### 2) Update phpunit.xml file with listener configuration.
+## PHPUnit configuration
 
+Register the listener in `phpunit.xml`:
+
+```xml
+<listeners>
+    <listener class="agentPHPUnit" file="vendor/reportportal/phpunit/src/agentPHPUnit.php">
+        <arguments>
+            <string>reportportal-uuid</string>
+            <string>https://reportportal.example.com</string>
+            <string>project-name</string>
+            <string>.000+00:00</string>
+            <string>test launch name</string>
+            <string>test launch description</string>
+        </arguments>
+    </listener>
+</listeners>
 ```
-    <listeners>
-        <listener class="agentPHPUnit" file="vendor/reportportal/phpunit/src/agentPHPUnit.php">
-            <arguments>
-                <string>25667b03-8760-469f-ad41-fc0b9c4b67fa</string>
-                <string>https://rp.epam.com</string>
-                <string>mikalai_kabzar_personal</string>
-                <string>.000+00:00</string>
-                <string>test launch name !!!</string>
-                <string>test launch description !!!</string>
-            </arguments>
-        </listener>
-    </listeners> 
-```
-agentPHPUnit listener's variables description.
 
-    - 1 - UUID.
-    - 2 - Report Portal server URL.
-    - 3 - Project name.
-    - 4 - Time Zone.
-    - 5 - Test Launch name.
-    - 6 - Test launch description.
-    
-Use as an example: https://github.com/Mikalai-Kabzar/phpUnit-test-framework/blob/master/phpunit.xml
+Arguments:
 
-#### 3) Fill in ```<string> ~ ~ ~ </string> ``` lines with data of your own Report Portal server.
+1. ReportPortal UUID/API token
+2. ReportPortal server URL
+3. ReportPortal project name
+4. Time zone suffix used by the ReportPortal client
+5. Test launch name
+6. Test launch description
 
-#### 4) Run command "composer update" to get dependencies.
-
-#### 5) Enjoy.
+See `ConfigFileExamples/phpUnitExampleConfigFile/phpunit.xml` for a complete
+example.
