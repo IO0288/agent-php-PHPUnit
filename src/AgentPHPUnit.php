@@ -12,7 +12,7 @@ use ReportPortalBasic\Enum\ItemStatusesEnum;
 use ReportPortalBasic\Enum\ItemTypesEnum;
 use ReportPortalBasic\Enum\LogLevelsEnum;
 use ReportPortalBasic\Service\ReportPortalHTTPService;
-use GuzzleHttp\Psr7\Response;
+use Psr\Http\Message\ResponseInterface;
 
 class AgentPHPUnit implements TestListener
 {
@@ -24,18 +24,13 @@ class AgentPHPUnit implements TestListener
     private $timeZone;
     private $launchName;
     private $launchDescription;
-    private $className;
-    private $classDescription;
     private $testName;
     private $testDescription;
 
-    private $rootItemID;
-    private $classItemID;
     private $testItemID;
 
-    private static $suiteCounter = 0;
+    private $suiteStack = [];
     private $isLaunchFailed = false;
-    private $isCurrentClassFailed = false;
     private $isFinished = false;
 
     /**
@@ -75,6 +70,7 @@ class AgentPHPUnit implements TestListener
         }
 
         $this->isFinished = true;
+        $this->finishOpenSuites();
         $status = self::getStatusByBool($this->isLaunchFailed);
         $HTTPResult = self::$httpService->finishTestRun($status);
         self::$httpService->finishAll($HTTPResult);
@@ -100,7 +96,7 @@ class AgentPHPUnit implements TestListener
             return ItemStatusesEnum::STOPPED;
         }
         if ($status === BaseTestRunner::STATUS_ERROR) {
-            return ItemStatusesEnum::CANCELLED;
+            return ItemStatusesEnum::FAILED;
         }
         if (defined(BaseTestRunner::class . '::STATUS_RISKY')
             && $status === constant(BaseTestRunner::class . '::STATUS_RISKY')
@@ -213,10 +209,10 @@ class AgentPHPUnit implements TestListener
     /**
      * Get ID from response
      *
-     * @param Response $HTTPResponse
+     * @param ResponseInterface $HTTPResponse
      * @return string
      */
-    private static function getID(Response $HTTPResponse)
+    private static function getID(ResponseInterface $HTTPResponse)
     {
         $payload = json_decode((string) $HTTPResponse->getBody(), true);
 
@@ -245,8 +241,29 @@ class AgentPHPUnit implements TestListener
 
     private function markFailed()
     {
-        $this->isCurrentClassFailed = true;
         $this->isLaunchFailed = true;
+        $this->markActiveSuitesFailed();
+    }
+
+    private function markActiveSuitesFailed()
+    {
+        foreach ($this->suiteStack as $index => $suite) {
+            $this->suiteStack[$index]['isFailed'] = true;
+        }
+    }
+
+    /**
+     * @return string
+     */
+    private function getCurrentSuiteID()
+    {
+        if (empty($this->suiteStack)) {
+            return '';
+        }
+
+        $suite = $this->suiteStack[count($this->suiteStack) - 1];
+
+        return $suite['id'];
     }
 
     /**
@@ -257,6 +274,7 @@ class AgentPHPUnit implements TestListener
      */
     public function addWarning(Test $test, Warning $e, float $time): void
     {
+        $this->markFailed();
         $this->addSetOfLogMessages($test, $e, LogLevelsEnum::WARN, $this->testItemID);
     }
 
@@ -296,7 +314,10 @@ class AgentPHPUnit implements TestListener
             $this->markFailed();
         }
 
-        self::$httpService->finishItem($this->testItemID, $testStatus, $time . ' seconds');
+        if (!empty($this->testItemID)) {
+            self::$httpService->finishItem($this->testItemID, $testStatus, $time . ' seconds');
+            $this->testItemID = '';
+        }
     }
 
     /**
@@ -305,13 +326,19 @@ class AgentPHPUnit implements TestListener
      */
     public function startTest(Test $test): void
     {
-        $this->testName = $test->getName();
+        $this->testName = $this->getTestName($test, true);
         $this->testDescription = '';
+        $parentItemID = $this->getCurrentSuiteID();
+        if (empty($parentItemID)) {
+            $this->startSuite(get_class($test));
+            $parentItemID = $this->getCurrentSuiteID();
+        }
+
         $response = self::$httpService->startChildItem(
-            $this->classItemID,
+            $parentItemID,
             $this->testDescription,
             $this->testName,
-            ItemTypesEnum::TEST,
+            ItemTypesEnum::STEP,
             [],
             $this->buildTestItemMetadata($test)
         );
@@ -327,11 +354,109 @@ class AgentPHPUnit implements TestListener
         $className = get_class($test);
         $testName = $this->getTestName($test, true);
         $methodName = $this->getTestName($test, false);
-
-        return [
+        $metadata = [
             'codeRef' => $className . '::' . $methodName,
             'uniqueId' => $className . '::' . $testName,
         ];
+
+        $parameters = $this->buildTestParameters($test, $methodName);
+        if (!empty($parameters)) {
+            $metadata['parameters'] = $parameters;
+        }
+
+        return $metadata;
+    }
+
+    /**
+     * @param Test $test
+     * @param string $methodName
+     * @return array
+     */
+    private function buildTestParameters(Test $test, string $methodName)
+    {
+        if (!method_exists($test, 'getProvidedData')) {
+            return [];
+        }
+
+        $providedData = $test->getProvidedData();
+        if (empty($providedData)) {
+            return [];
+        }
+
+        $parameters = [];
+        if (method_exists($test, 'dataName')) {
+            $dataName = $test->dataName();
+            if ($dataName !== '') {
+                $parameters[] = [
+                    'key' => '_dataName',
+                    'value' => (string) $dataName,
+                ];
+            }
+        }
+
+        $parameterNames = $this->getMethodParameterNames($test, $methodName);
+        $index = 0;
+        foreach ($providedData as $key => $value) {
+            $parameterKey = isset($parameterNames[$index]) ? $parameterNames[$index] : (string) $key;
+            $parameters[] = [
+                'key' => $parameterKey,
+                'value' => $this->formatParameterValue($value),
+            ];
+            $index++;
+        }
+
+        return $parameters;
+    }
+
+    /**
+     * @param Test $test
+     * @param string $methodName
+     * @return array
+     */
+    private function getMethodParameterNames(Test $test, string $methodName)
+    {
+        try {
+            $method = new ReflectionMethod($test, $methodName);
+        } catch (ReflectionException $e) {
+            return [];
+        }
+
+        $names = [];
+        foreach ($method->getParameters() as $parameter) {
+            $names[] = $parameter->getName();
+        }
+
+        return $names;
+    }
+
+    /**
+     * @param mixed $value
+     * @return string
+     */
+    private function formatParameterValue($value)
+    {
+        if ($value === null) {
+            return 'null';
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+
+        if (is_scalar($value)) {
+            return (string) $value;
+        }
+
+        $encoded = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($encoded !== false) {
+            return $encoded;
+        }
+
+        if (is_object($value)) {
+            return get_class($value);
+        }
+
+        return gettype($value);
     }
 
     /**
@@ -360,22 +485,7 @@ class AgentPHPUnit implements TestListener
     public function startTestSuite(TestSuite $suite): void
     {
         if (self::hasSuiteName($suite)) {
-            self::$suiteCounter++;
-
-            if (self::$suiteCounter == 1) {
-                $suiteName = $suite->getName();
-                $response = self::$httpService->createRootItem($suiteName, '', []);
-                $this->rootItemID = self::getID($response);
-            } elseif (self::$suiteCounter > 1) {
-                $className = $suite->getName();
-                $this->className = $className;
-                $this->classDescription = '';
-                if (self::$suiteCounter == 2) {
-                    $response = self::$httpService->startChildItem($this->rootItemID, $this->classDescription, $this->className, ItemTypesEnum::SUITE, []);
-                    $this->classItemID = self::getID($response);
-                    $this->isCurrentClassFailed = false;
-                }
-            }
+            $this->startSuite($suite->getName());
         }
     }
 
@@ -386,14 +496,67 @@ class AgentPHPUnit implements TestListener
     public function endTestSuite(TestSuite $suite): void
     {
         if (self::hasSuiteName($suite)) {
-            self::$suiteCounter--;
-            if (self::$suiteCounter == 0) {
-                self::$httpService->finishRootItem();
-            } elseif (self::$suiteCounter == 1 && !empty($this->classItemID)) {
-                $status = self::getStatusByBool($this->isCurrentClassFailed);
-                self::$httpService->finishItem($this->classItemID, $status, $this->classDescription);
-            }
+            $this->finishCurrentSuite();
         }
+    }
+
+    /**
+     * @param string $suiteName
+     */
+    private function startSuite(string $suiteName)
+    {
+        $description = '';
+        if (empty($this->suiteStack)) {
+            $response = self::$httpService->createRootItem($suiteName, $description, []);
+        } else {
+            $response = self::$httpService->startChildItem(
+                $this->getCurrentSuiteID(),
+                $description,
+                $suiteName,
+                ItemTypesEnum::SUITE,
+                []
+            );
+        }
+
+        $this->suiteStack[] = [
+            'id' => self::getID($response),
+            'description' => $description,
+            'isFailed' => false,
+        ];
+    }
+
+    private function finishCurrentSuite()
+    {
+        if (empty($this->suiteStack)) {
+            return;
+        }
+
+        $suite = array_pop($this->suiteStack);
+        $this->finishSuite($suite);
+
+        if ($suite['isFailed'] && !empty($this->suiteStack)) {
+            $this->suiteStack[count($this->suiteStack) - 1]['isFailed'] = true;
+        }
+    }
+
+    private function finishOpenSuites()
+    {
+        while (!empty($this->suiteStack)) {
+            $this->finishCurrentSuite();
+        }
+    }
+
+    /**
+     * @param array $suite
+     */
+    private function finishSuite(array $suite)
+    {
+        if (empty($suite['id'])) {
+            return;
+        }
+
+        $status = self::getStatusByBool($suite['isFailed']);
+        self::$httpService->finishItem($suite['id'], $status, $suite['description']);
     }
 
     /**
