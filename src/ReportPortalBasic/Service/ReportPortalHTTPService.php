@@ -582,7 +582,25 @@ class ReportPortalHTTPService
      */
     protected static function getTime()
     {
-        return date(self::FORMAT_DATE) . self::$timeZone;
+        return self::createCurrentTime(self::$timeZone);
+    }
+
+    /**
+     * @param string $timeZoneSuffix
+     * @return string
+     */
+    private static function createCurrentTime(string $timeZoneSuffix)
+    {
+        $matches = [];
+        if (!preg_match('/^(\\.\\d{1,6})?([+-]\\d{2}:\\d{2}|Z)$/', $timeZoneSuffix, $matches)) {
+            return gmdate(self::FORMAT_DATE) . $timeZoneSuffix;
+        }
+
+        $fraction = isset($matches[1]) && $matches[1] !== '' ? $matches[1] : '.000';
+        $offset = $matches[2] === 'Z' ? '+00:00' : $matches[2];
+        $date = new \DateTimeImmutable('now', new \DateTimeZone($offset));
+
+        return $date->format(self::FORMAT_DATE) . $fraction . $offset;
     }
 
     /**

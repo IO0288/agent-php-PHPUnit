@@ -43,6 +43,37 @@ final class ReportPortalHTTPServicePayloadTest extends TestCase
         $this->assertArrayNotHasKey('tags', $payload);
     }
 
+    public function testPayloadTimeDoesNotDependOnPhpDefaultTimezone(): void
+    {
+        $originalTimezone = date_default_timezone_get();
+        date_default_timezone_set('Asia/Shanghai');
+
+        try {
+            $history = [];
+            $this->installMockClient([
+                new Response(201, [], '{"id":"launch-uuid","number":1}'),
+            ], $history);
+
+            $before = time();
+            ReportPortalHTTPService::launchTestRun(
+                'test launch name',
+                'test launch description',
+                ReportPortalHTTPService::DEFAULT_LAUNCH_MODE,
+                []
+            );
+            $after = time();
+
+            $payload = $this->requestPayload($history, 0);
+            $startTimestamp = strtotime($payload['startTime']);
+
+            $this->assertStringEndsWith('.000+00:00', $payload['startTime']);
+            $this->assertGreaterThanOrEqual($before - 1, $startTimestamp);
+            $this->assertLessThanOrEqual($after + 1, $startTimestamp);
+        } finally {
+            date_default_timezone_set($originalTimezone);
+        }
+    }
+
     public function testItemLogAndFinishPayloadsUseCurrentReportPortalFields(): void
     {
         $history = [];
